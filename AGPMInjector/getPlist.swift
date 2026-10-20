@@ -1,11 +1,12 @@
 import Foundation
 
 struct PlistGet: Codable {
-    let buildMachineOSBuild, cfBundleDevelopmentRegion, cfBundleGetInfoString, cfBundleIdentifier: String
-    let cfBundleInfoDictionaryVersion, cfBundleName, cfBundlePackageType, cfBundleShortVersionString: String
-    let cfBundleSignature, cfBundleVersion, nsHumanReadableCopyright: String
+    // Apple drops keys between macOS releases, so everything outside IOKitPersonalities is optional
+    let buildMachineOSBuild, cfBundleDevelopmentRegion, cfBundleGetInfoString, cfBundleIdentifier: String?
+    let cfBundleInfoDictionaryVersion, cfBundleName, cfBundlePackageType, cfBundleShortVersionString: String?
+    let cfBundleSignature, cfBundleVersion, nsHumanReadableCopyright: String?
     let IOKitPersonalities: IOKitPersonalities
-    let osBundleRequired: String
+    let osBundleRequired: String?
     
     enum CodingKeys: String, CodingKey {
         case buildMachineOSBuild = "BuildMachineOSBuild"

@@ -5,7 +5,6 @@ class ViewController: NSViewController {
     let getAGPMFilePath = "/System/Library/Extensions/AppleGraphicsPowerManagement.kext/Contents/Info.plist"
     let bundleID = "com.apple.driver.AGPMInjector"
     let bundleName = "AGPMInjector"
-    let bundleShortVersionName = Bundle.main.infoDictionary?["CFBundleShortVersionString"]
     let bundleSig = "????"
     // Create Decoder object
     let plistDecoder = PropertyListDecoder()
@@ -17,8 +16,9 @@ class ViewController: NSViewController {
     let maxPState = 15
     let miniPState = 0
     let setID = -1
+    var didLoadMachines = false
     var AMDDictionary = [
-        "RX 5600XT": "Vendor1002Device731F",
+        "RX 5600XT": "Vendor1002Device731f",
         "RX 5500XT": "Vendor1002Device7340",
         "Radeon VII": "Vendor1002Device66af",
         "R9 270": "Vendor1002Device6811",
@@ -47,7 +47,14 @@ class ViewController: NSViewController {
         "Pro Duo": "Vendor1002Device67c4",
         "W 7100": "Vendor1002Device692b",
         "W 9100": "Vendor1002Device67a0",
-        "RX 5700XT": "Vendor1002Device731f"
+        "RX 5700XT": "Vendor1002Device731f",
+        "RX 6500XT": "Vendor1002Device743f",
+        "RX 6600": "Vendor1002Device73ff",
+        "RX 6600XT": "Vendor1002Device73ff",
+        "RX 6700XT": "Vendor1002Device73df",
+        "RX 6800": "Vendor1002Device73bf",
+        "RX 6800XT": "Vendor1002Device73bf",
+        "RX 6900XT": "Vendor1002Device73bf"
     ]
     
     var NvidiaDictionary = [
@@ -91,156 +98,95 @@ class ViewController: NSViewController {
     
     
     
+    // Board-IDs used by AppleGraphicsPowerManagement.kext mapped to the model identifiers shown to the user
+    let boardIDToModel = [
+        "Mac-27AD2F918AE68F61": "MacPro7,1",
+        "Mac-27ADBB7B4CEE8E61": "iMac14,2",
+        "Mac-00BE6ED71E35EB86": "iMac13,1",
+        "Mac-031B6874CF7F642A": "iMac14,1",
+        "Mac-42FD25EABCABB274": "iMac15,1",
+        "Mac-4B682C642B45593E": "iMac18,1",
+        "Mac-77EB7D7DAF985301": "iMac14,3",
+        "Mac-77F17D7DA9285301": "iMac18,2",
+        "Mac-7BA5B2D9E42DDD94": "iMacPro1,1",
+        "Mac-7DF2A3B5E5D671ED": "iMac13,3",
+        "Mac-81E3E92DD6088272": "iMac14,4",
+        "Mac-A369DDC4E67F1C45": "iMac16,1",
+        "Mac-B809C3757DA9BB8D": "iMac17,1",
+        "Mac-BE088AF8C5EB4FA2": "iMac18,3",
+        "Mac-F60DEB81FF30ACF6": "MacPro6,1",
+        "Mac-FA842E06C61E91C5": "iMac15,2",
+        "Mac-FC02E91DDD3FA6A4": "iMac13,2",
+        "Mac-FFE5EF870D7BA81A": "iMac16,2",
+        "Mac-63001698E7A34814": "iMac19,2",
+        "Mac-AA95B1DDAB278B95": "iMac19,1",
+        "Mac-AF89B6D9451A490B": "iMac20,2",
+        "Mac-CFF7D910A743CAAF": "iMac20,1"
+    ]
+
+    // Only desktop type machines that can take a "desktop" GPU make sense here
+    func isDesktopModel(_ name: String) -> Bool {
+        guard name != "iMac9,1" else { return false }
+        return name.range(of: "^(iMac|iMacPro|MacPro)[0-9]+,[0-9]+$", options: .regularExpression) != nil
+    }
+
+    func readAGPMPlist() throws -> PlistGet {
+        let data = try Data(contentsOf: URL(fileURLWithPath: getAGPMFilePath))
+        return try plistDecoder.decode(PlistGet.self, from: data)
+    }
+
+    func showFatalAlert(_ message: String, _ info: String) {
+        let alert = NSAlert()
+        alert.alertStyle = .critical
+        alert.messageText = message
+        alert.informativeText = info
+        alert.runModal()
+        NSApp.terminate(nil)
+    }
+
     override func viewDidLoad() {
+        super.viewDidLoad()
         AMDMenu.isHidden = true
         NvidiaMenu.isHidden = true
         self.preferredContentSize = NSMakeSize(self.view.frame.size.width, self.view.frame.size.height)
-        super.viewDidLoad()
-        let getAGPMFilePathURL = URL.init(fileURLWithPath: getAGPMFilePath)
-        // Decoder the AppleGraphicsPowerManagement.kext Info.plist and get some information to save as variable
-        let data = try! Data(contentsOf: getAGPMFilePathURL)
-        let plistData = try! plistDecoder.decode(PlistGet.self, from: data)
-        var machineArray = [String](plistData.IOKitPersonalities.AGPM.Machines.keys)
-        
-        
-        func removeItemsFromArray(item: String) {
-            if let item = machineArray.firstIndex(of: "\(item)") {
-                machineArray.remove(at: item)
+    }
+
+    override func viewDidAppear() {
+        super.viewDidAppear()
+        guard !didLoadMachines else { return }
+        didLoadMachines = true
+        // Decode the AppleGraphicsPowerManagement.kext Info.plist and list the machines it supports
+        let plistData: PlistGet
+        do {
+            plistData = try readAGPMPlist()
+        } catch {
+            showFatalAlert("Unable to read AppleGraphicsPowerManagement.kext",
+                           "\(getAGPMFilePath) could not be read or parsed. This app only works on Intel Macs that ship this kext.\n\n\(error.localizedDescription)")
+            return
+        }
+        var machines = Set<String>()
+        for key in plistData.IOKitPersonalities.AGPM.Machines.keys {
+            let name = boardIDToModel[key] ?? key
+            if isDesktopModel(name) {
+                machines.insert(name)
             }
         }
-        
-        func renameItemInArray(olditem: String, newitem: String) {
-            if let olditem = machineArray.firstIndex(of: "\(olditem)") {
-                machineArray.remove(at: olditem)
-                machineArray.insert("\(newitem)", at: olditem)
-            }
+        guard !machines.isEmpty else {
+            showFatalAlert("No supported machines found", "AppleGraphicsPowerManagement.kext does not list any iMac or Mac Pro models.")
+            return
         }
-        
-        // Remove machines that do not make sense to have "desktop" type of GPU and rename board-id types to model types
-        removeItemsFromArray(item: "MacBookAir2,1")
-        removeItemsFromArray(item: "MacBookAir4,1")
-        removeItemsFromArray(item: "MacBookAir4,2")
-        removeItemsFromArray(item: "Mac-226CB3C6A851A671")
-        removeItemsFromArray(item: "Mac-53FDB3D8DB8CA971")
-        removeItemsFromArray(item: "Mac-2E6FAB96566FE58C")
-        removeItemsFromArray(item: "Mac-35C1E88140C3E6CF")
-        removeItemsFromArray(item: "Mac-50619A408DB004DA")
-        removeItemsFromArray(item: "Mac-65CE76090165799A")
-        removeItemsFromArray(item: "Mac-66F35F19FE2A0D05")
-        removeItemsFromArray(item: "Mac-6F01109E16C71B86")
-        removeItemsFromArray(item: "Mac-7DF21CB3ED6977E5")
-        removeItemsFromArray(item: "Mac-827FAC58A8FDFA22")
-        removeItemsFromArray(item: "Mac-937CB26E2E02BB01")
-        removeItemsFromArray(item: "Mac-942452F5819B1C1B")
-        removeItemsFromArray(item: "Mac-942C5DF58193131B")
-        removeItemsFromArray(item: "Mac-9F18E312C5C2BF0B")
-        removeItemsFromArray(item: "Mac-ACE8A17C0DE83137")
-        removeItemsFromArray(item: "Mac-DB15BD556843C820")
-        removeItemsFromArray(item: "Mac-FFE5EF92E7BD251A")
-        removeItemsFromArray(item: "Mac-031AEE4D24BFF0B1")
-        removeItemsFromArray(item: "Mac-06F11F11946D27C5")
-        removeItemsFromArray(item: "Mac-06F11FD93F0323C5")
-        removeItemsFromArray(item: "Mac-189A3D4F975D5FFC")
-        removeItemsFromArray(item: "Mac-2BD1B31983FE1663")
-        removeItemsFromArray(item: "Mac-35C5E08120C7EEAF")
-        removeItemsFromArray(item: "Mac-3CBD00234E554E41")
-        removeItemsFromArray(item: "Mac-473D31EABEB93F9B")
-        removeItemsFromArray(item: "Mac-4B7AC7E43945597E")
-        removeItemsFromArray(item: "Mac-4BC72D62AD45599E")
-        removeItemsFromArray(item: "Mac-1E7E29AD0135F9BC")
-        removeItemsFromArray(item: "Mac-551B86E5744E2388")
-        removeItemsFromArray(item: "Mac-66E35819EE2D0D05")
-        removeItemsFromArray(item: "Mac-6F01561E16C75D06")
-        removeItemsFromArray(item: "Mac-7BA5B2794B2CDB12")
-        removeItemsFromArray(item: "Mac-7BA5B2DFE22DDD8C")
-        removeItemsFromArray(item: "Mac-827FB448E656EC26")
-        removeItemsFromArray(item: "Mac-8ED6AF5B48C039E1")
-        removeItemsFromArray(item: "Mac-937A206F2EE63C01")
-        removeItemsFromArray(item: "Mac-9AE82516C7C6B903")
-        removeItemsFromArray(item: "Mac-A5C67F76ED83108C")
-        removeItemsFromArray(item: "Mac-AFD8A9D944EA4843")
-        removeItemsFromArray(item: "Mac-B4831CEBD52A0C4C")
-        removeItemsFromArray(item: "Mac-BE0E8AC46FE800CC")
-        removeItemsFromArray(item: "Mac-C3EC7CD22292981F")
-        removeItemsFromArray(item: "Mac-CAD6701F7CEA0921")
-        removeItemsFromArray(item: "Mac-E43C1C25D4880AD6")
-        removeItemsFromArray(item: "Mac-EE2EBD4B90B839A8")
-        removeItemsFromArray(item: "Mac-F305150B0C7DEEEF")
-        removeItemsFromArray(item: "Mac-F65AE981FFA204ED")
-        removeItemsFromArray(item: "Mac-E1008331FDC96864")
-        removeItemsFromArray(item: "Mac-564FBA6031E5946A")
-        removeItemsFromArray(item: "Mac-0CFF9C7C2B63DF8D")
-        removeItemsFromArray(item: "Mac-87DCB00F4AD77EEA")
-        removeItemsFromArray(item: "Mac-9394BDF4BF862EE7")
-        removeItemsFromArray(item: "Mac-5F9802EFE386AA28")
-        removeItemsFromArray(item: "Mac-6FEBD60817C77D8A")
-        removeItemsFromArray(item: "Mac-747B1AEFF11738BE")
-        removeItemsFromArray(item: "Mac-A61BADE1FDAD7B05")
-        removeItemsFromArray(item: "Mac-E7203C0F68AA0004")
-        removeItemsFromArray(item: "MacBook5,1")
-        removeItemsFromArray(item: "MacBook5,2")
-        removeItemsFromArray(item: "MacBook6,1")
-        removeItemsFromArray(item: "MacBook7,1")
-        removeItemsFromArray(item: "MacBookPro5,1")
-        removeItemsFromArray(item: "MacBookPro5,2")
-        removeItemsFromArray(item: "MacBookPro5,3")
-        removeItemsFromArray(item: "MacBookPro5,4")
-        removeItemsFromArray(item: "MacBookPro5,5")
-        removeItemsFromArray(item: "MacBookPro6,1")
-        removeItemsFromArray(item: "MacBookPro6,2")
-        removeItemsFromArray(item: "MacBookPro7,1")
-        removeItemsFromArray(item: "MacBookPro8,1")
-        removeItemsFromArray(item: "MacBookPro8,2")
-        removeItemsFromArray(item: "MacBookPro8,3")
-        removeItemsFromArray(item: "Macmini3,1")
-        removeItemsFromArray(item: "Macmini4,1")
-        removeItemsFromArray(item: "Xserve3,1")
-        removeItemsFromArray(item: "iMac9,1")
-        removeItemsFromArray(item: "Vendor8086Device8a51")
-        removeItemsFromArray(item: "Vendor8086Device8a52")
-        removeItemsFromArray(item: "Vendor8086Device8a5a")
-        removeItemsFromArray(item: "Vendor8086Device8a5b")
-        removeItemsFromArray(item: "Vendor8086Device8a5c")
-        removeItemsFromArray(item: "Vendor8086Device8a5d")
-        removeItemsFromArray(item: "Vendor8086Device8a70")
-        removeItemsFromArray(item: "Vendor8086Device8a71")
-        renameItemInArray(olditem: "Mac-27AD2F918AE68F61", newitem: "MacPro7,1")
-        renameItemInArray(olditem: "Mac-27ADBB7B4CEE8E61", newitem: "iMac14,2")
-        renameItemInArray(olditem: "Mac-00BE6ED71E35EB86", newitem: "iMac13,1")
-        renameItemInArray(olditem: "Mac-031B6874CF7F642A", newitem: "iMac14,1")
-        renameItemInArray(olditem: "Mac-42FD25EABCABB274", newitem: "iMac15,1")
-        renameItemInArray(olditem: "Mac-4B682C642B45593E", newitem: "iMac18,1")
-        renameItemInArray(olditem: "Mac-77EB7D7DAF985301", newitem: "iMac14,3")
-        renameItemInArray(olditem: "Mac-77F17D7DA9285301", newitem: "iMac18,2")
-        renameItemInArray(olditem: "Mac-7BA5B2D9E42DDD94", newitem: "iMacPro1,1")
-        renameItemInArray(olditem: "Mac-7DF2A3B5E5D671ED", newitem: "iMac13,3")
-        renameItemInArray(olditem: "Mac-81E3E92DD6088272", newitem: "iMac14,4")
-        renameItemInArray(olditem: "Mac-A369DDC4E67F1C45", newitem: "iMac16,1")
-        renameItemInArray(olditem: "Mac-B809C3757DA9BB8D", newitem: "iMac17,1")
-        renameItemInArray(olditem: "Mac-BE088AF8C5EB4FA2", newitem: "iMac18,3")
-        renameItemInArray(olditem: "Mac-F60DEB81FF30ACF6", newitem: "MacPro6,1")
-        renameItemInArray(olditem: "Mac-FA842E06C61E91C5", newitem: "iMac15,2")
-        renameItemInArray(olditem: "Mac-FC02E91DDD3FA6A4", newitem: "iMac13,2")
-        renameItemInArray(olditem: "Mac-FFE5EF870D7BA81A", newitem: "iMac16,2")
-        renameItemInArray(olditem: "Mac-63001698E7A34814", newitem: "iMac19,2")
-        renameItemInArray(olditem: "Mac-AA95B1DDAB278B95", newitem: "iMac19,1")
-        renameItemInArray(olditem: "Mac-AF89B6D9451A490B", newitem: "iMac20,2")
-        renameItemInArray(olditem: "Mac-CFF7D910A743CAAF", newitem: "iMac20,1")
-        let sortedArray = machineArray.sorted()
-        let sortedAMDDictionary = AMDDictionary.keys.sorted()
-        let sortedNvidiaDictionary = NvidiaDictionary.keys.sorted()
-        
         AMDMenu.removeAllItems()
-        AMDMenu.addItems(withTitles: sortedAMDDictionary)
+        AMDMenu.addItems(withTitles: AMDDictionary.keys.sorted())
         AMDMenu.selectItem(at: 0)
         NvidiaMenu.removeAllItems()
-        NvidiaMenu.addItems(withTitles: sortedNvidiaDictionary)
+        NvidiaMenu.addItems(withTitles: NvidiaDictionary.keys.sorted())
         NvidiaMenu.selectItem(at: 0)
         machineSelected.removeAllItems()
-        machineSelected.addItems(withTitles: sortedArray)
+        machineSelected.addItems(withTitles: machines.sorted())
         machineSelected.selectItem(at: 0)
+        imageSelection(machineSelected as Any)
     }
-    
+
     func saveAlert () {
         let fileManager = FileManager.default
         let home = fileManager.homeDirectoryForCurrentUser
@@ -252,7 +198,19 @@ class ViewController: NSViewController {
         alert.beginSheetModal(for: self.view.window!, completionHandler: nil)
     }
     
-    func existAlert () {
+    func showError(_ message: String, _ info: String) {
+        let alert = NSAlert()
+        alert.alertStyle = .critical
+        alert.messageText = message
+        alert.informativeText = info
+        if let window = self.view.window {
+            alert.beginSheetModal(for: window, completionHandler: nil)
+        } else {
+            alert.runModal()
+        }
+    }
+
+    func existAlert (encodable: @escaping () -> Void) {
         let fileManager = FileManager.default
         let home = fileManager.homeDirectoryForCurrentUser
         let kextPath = "Downloads/AGPMInjector.kext"
@@ -260,15 +218,17 @@ class ViewController: NSViewController {
         let alert = NSAlert()
         alert.alertStyle = .critical
         alert.addButton(withTitle: "Delete")
+        alert.addButton(withTitle: "Cancel")
         alert.messageText = "File Already Exist!"
-        alert.informativeText = "AGPMInjector.kext already exist at \(kextUrl.path). Click the Delete button to delete the existing file!"
+        alert.informativeText = "AGPMInjector.kext already exist at \(kextUrl.path). Click Delete to replace it with a newly generated one."
         alert.beginSheetModal(for: self.view.window!, completionHandler: { (returnCode) -> Void in
             switch returnCode {
-            case NSApplication.ModalResponse.alertFirstButtonReturn: do {
-                try fileManager.removeItem(at: kextUrl)
-            }
-            catch {
-                print(error.localizedDescription)
+            case NSApplication.ModalResponse.alertFirstButtonReturn:
+                do {
+                    try fileManager.removeItem(at: kextUrl)
+                    encodable()
+                } catch {
+                    self.showError("Unable to delete AGPMInjector.kext", error.localizedDescription)
                 }
             default:
                 return
@@ -282,7 +242,7 @@ class ViewController: NSViewController {
         let filePath =  setDocumentDirectory.appendingPathComponent("\(setAGPMInjectorDirectory)")
         let fileManager = FileManager.default
         if fileManager.fileExists(atPath: filePath.path) {
-            existAlert()
+            existAlert(encodable: { self.savePlist(encodable: encodable) })
         } else {
             do {
                 try FileManager.default.createDirectory(atPath: filePath.path, withIntermediateDirectories: true, attributes: nil)
@@ -292,7 +252,7 @@ class ViewController: NSViewController {
                 saveAlert()
             }
             catch {
-                print(error.localizedDescription)
+                showError("Unable to generate AGPMInjector.kext", error.localizedDescription)
             }
         }
     }
@@ -330,30 +290,31 @@ class ViewController: NSViewController {
     }
     
     @IBAction func generateButton(_ sender: Any) {
-        let getAGPMFilePathURL = URL.init(fileURLWithPath: getAGPMFilePath)
-        // Decoder the AppleGraphicsPowerManagement.kext Info.plist and get some information to save as variable
-        let data = try! Data(contentsOf: getAGPMFilePathURL)
-        let plistData = try! plistDecoder.decode(PlistGet.self, from: data)
-        let plistEncoder = PropertyListEncoder()
-        plistEncoder.outputFormat = .xml
-        // Create objects to represent the plist data to get encoded
-        if AMDCheck.state == NSControl.StateValue.on {
-            NvidiaMenu.state = NSControl.StateValue.off
-            let amdGpu = AMDDictionary[AMDMenu.titleOfSelectedItem!]
-            
-            let plistToEncode = setPlist(buildMachineOSBuild: plistData.buildMachineOSBuild, cfBundleDevelopmentRegion: plistData.cfBundleDevelopmentRegion, cfBundleGetInfoString: plistData.cfBundleGetInfoString, cfBundleIdentifier: bundleID, cfBundleInfoDictionaryVersion: plistData.cfBundleInfoDictionaryVersion, cfBundleName: bundleName, cfBundlePackageType: plistData.cfBundlePackageType, cfBundleShortVersionString: bundleShortVersionName as! String, cfBundleSignature: bundleSig, cfBundleVersion: plistData.cfBundleVersion, nsHumanReadableCopyright: plistData.nsHumanReadableCopyright, setIOKitPersonalities: setIOKitPersonalities(setAGPM: setAGPM(cfBundleIdentifier: plistData.IOKitPersonalities.AGPM.cfBundleIdentifier, ioClass: plistData.IOKitPersonalities.AGPM.ioClass, ioNameMatch: plistData.IOKitPersonalities.AGPM.ioNameMatch, ioProviderClass: plistData.IOKitPersonalities.AGPM.ioProviderClass, setMachines: setMachines(machine: setMachine(machinetype: setMachine.MachineType(stringValue: machineSelected!.titleOfSelectedItem!)!, setGPUs: setGpu(gpu: setGpu.Gputype(stringValue: amdGpu!)!, agdcEnabled: AgdcEnabled, setHeuristic: setHeuristic(setID: setID), controlID: controlID, maxPowerState: maxPState, minPowerState: miniPState))))), osBundleRequired: plistData.osBundleRequired)
-            
-            savePlist(encodable: plistToEncode)
+        let plistData: PlistGet
+        do {
+            plistData = try readAGPMPlist()
+        } catch {
+            showError("Unable to read AppleGraphicsPowerManagement.kext", error.localizedDescription)
+            return
         }
-        
-        if NvidiaCheck.state == NSControl.StateValue.on {
-            AMDMenu.state = NSControl.StateValue.off
-            let nvidiaGpu = NvidiaDictionary[NvidiaMenu.titleOfSelectedItem!]
-            
-            let plistToEncode = setPlist(buildMachineOSBuild: plistData.buildMachineOSBuild, cfBundleDevelopmentRegion: plistData.cfBundleDevelopmentRegion, cfBundleGetInfoString: plistData.cfBundleGetInfoString, cfBundleIdentifier: bundleID, cfBundleInfoDictionaryVersion: plistData.cfBundleInfoDictionaryVersion, cfBundleName: bundleName, cfBundlePackageType: plistData.cfBundlePackageType, cfBundleShortVersionString: bundleShortVersionName as! String, cfBundleSignature: bundleSig, cfBundleVersion: plistData.cfBundleVersion, nsHumanReadableCopyright: plistData.nsHumanReadableCopyright, setIOKitPersonalities: setIOKitPersonalities(setAGPM: setAGPM(cfBundleIdentifier: plistData.IOKitPersonalities.AGPM.cfBundleIdentifier, ioClass: plistData.IOKitPersonalities.AGPM.ioClass, ioNameMatch: plistData.IOKitPersonalities.AGPM.ioNameMatch, ioProviderClass: plistData.IOKitPersonalities.AGPM.ioProviderClass, setMachines: setMachines(machine: setMachine(machinetype: setMachine.MachineType(stringValue: machineSelected!.titleOfSelectedItem!)!, setGPUs: setGpu(gpu: setGpu.Gputype(stringValue: nvidiaGpu!)!, agdcEnabled: AgdcEnabled, setHeuristic: setHeuristic(setID: setID), controlID: controlID, maxPowerState: maxPState, minPowerState: miniPState))))), osBundleRequired: plistData.osBundleRequired)
-            
-            savePlist(encodable: plistToEncode)
+        guard let machine = machineSelected.titleOfSelectedItem else { return }
+        let gpu: String?
+        if AMDCheck.state == .on {
+            gpu = AMDMenu.titleOfSelectedItem.flatMap { AMDDictionary[$0] }
+        } else if NvidiaCheck.state == .on {
+            gpu = NvidiaMenu.titleOfSelectedItem.flatMap { NvidiaDictionary[$0] }
+        } else {
+            showError("No GPU selected", "Check the box for the dGPU manufacturer you have installed.")
+            return
         }
+        guard let gpuID = gpu else { return }
+        let agpm = plistData.IOKitPersonalities.AGPM
+        let heuristic = setHeuristic(setID: setID)
+        let gpuSettings = setGpu(gpu: gpuID, agdcEnabled: AgdcEnabled, setHeuristic: heuristic, controlID: controlID, maxPowerState: maxPState, minPowerState: miniPState)
+        let machines = setMachines(machine: setMachine(machinetype: machine, setGPUs: gpuSettings))
+        let personalities = setIOKitPersonalities(setAGPM: setAGPM(cfBundleIdentifier: agpm.cfBundleIdentifier, ioClass: agpm.ioClass, ioNameMatch: agpm.ioNameMatch, ioProviderClass: agpm.ioProviderClass, setMachines: machines))
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
+        let plistToEncode = setPlist(buildMachineOSBuild: plistData.buildMachineOSBuild, cfBundleDevelopmentRegion: plistData.cfBundleDevelopmentRegion, cfBundleGetInfoString: plistData.cfBundleGetInfoString, cfBundleIdentifier: bundleID, cfBundleInfoDictionaryVersion: plistData.cfBundleInfoDictionaryVersion, cfBundleName: bundleName, cfBundlePackageType: plistData.cfBundlePackageType, cfBundleShortVersionString: version, cfBundleSignature: bundleSig, cfBundleVersion: plistData.cfBundleVersion, nsHumanReadableCopyright: plistData.nsHumanReadableCopyright, setIOKitPersonalities: personalities, osBundleRequired: plistData.osBundleRequired)
+        savePlist(encodable: plistToEncode)
     }
 }
-
