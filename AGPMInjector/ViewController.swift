@@ -297,7 +297,9 @@ class ViewController: NSViewController {
             showError("Unable to read AppleGraphicsPowerManagement.kext", error.localizedDescription)
             return
         }
-        guard let machine = machineSelected.titleOfSelectedItem else { return }
+        guard let model = machineSelected.titleOfSelectedItem else { return }
+        // Newer AGPM plists key machines by board-ID; fall back to the model name for those still keyed by model
+        let machine = boardIDToModel.first(where: { $0.value == model })?.key ?? model
         let gpu: String?
         if AMDCheck.state == .on {
             gpu = AMDMenu.titleOfSelectedItem.flatMap { AMDDictionary[$0] }
