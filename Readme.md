@@ -18,7 +18,7 @@ AGPM Injector  [![Build Status](https://app.bitrise.io/app/7da5df68f87d8ead/stat
 - Generating the kext on to the user's Desktop when a user has Desktop and Documents enabled for iCloud does not generate the required Info.plist inside the kext file itself. This is because Desktop and Documents enbabled for iCloud turns those directories into containers for iCloud services. This would require my app to enable iCloud APIs which in turn requires me to submit my app to the App Store, which I will not do. So the current generation of the kext to the currently logged in user's Downloads directory is the best solution.
 
 #### Compatibility
-- Builds with Xcode 26 and runs on macOS 10.13 through macOS Tahoe (26) on Intel Macs (the app is x86_64 only, as is AppleGraphicsPowerManagement.kext).
+- Builds with Xcode 26 and runs on macOS 12 through macOS Tahoe (26) on Intel Macs (the app is x86_64 only, as is AppleGraphicsPowerManagement.kext).
 - If the kext cannot be read or parsed, the app now shows an error instead of crashing.
 
 #### Important Information
