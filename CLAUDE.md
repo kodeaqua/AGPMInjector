@@ -19,6 +19,8 @@ xcodebuild -project AGPMInjector.xcodeproj -scheme AGPMInjector -configuration D
 ## Conventions and gotchas
 - GPU IDs must be lowercase hex (`Vendor1002Device731f`); the key is case sensitive.
 - The output key is `Machines` (plural). A kext with `Machine` is silently ignored by AGPM.
+- The machine key must be the **board-ID** (e.g. `Mac-7BA5B2D9E42DDD94` for iMacPro1,1) on Tahoe's AGPM plist, not the model name; `generateButton` maps model to board-ID via `boardIDToModel`, falling back to the model name for older machines keyed by model (MacPro5,1 etc.). A wrong key is silently ignored and the GPU idles at high power (~70 W on Vega 56, memory clock stuck at 800 MHz).
+- Verify a loaded kext with `ioreg -rc AGPM -w0 -l | grep Machines` and idle power with `ioreg -rc IOAccelerator -w0 | grep -o '"Total Power(W)"=[0-9]*'`.
 - Display names for Mac board-IDs live in `boardIDToModel`; only iMac/iMacPro/MacPro models are listed (`isDesktopModel`).
 - Add a GPU by adding a line to `AMDDictionary` or `NvidiaDictionary`; no other change is needed.
 - Releases are unsigned/ad-hoc: users must clear quarantine (`xattr -dr com.apple.quarantine`) or right-click Open.
